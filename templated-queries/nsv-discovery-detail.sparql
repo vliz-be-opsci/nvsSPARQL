@@ -1,0 +1,56 @@
+{#- Jinja Template --> Sparql Query
+ | Search for the narrow down related concepts of a specified SDN identifier 
+ | And add the related or broader 
+ | variables in template:
+ |    - sdnid: the full formatted "SDN:«collection»::«code»" identifier to lookup
+ |    - (optional) tgt_col: target collection to narrow down to (defaults to "P01")
+ |    - (optional) skosrel: type of skos relation (narrower, broader, related) to follow up on (defaults to "narrower")
+ |    - cols: array of columns to look into other related or broader terms that specify the found narrow target term
+ |    - (optional) lang: language of the labels to return (defaults to "en")
+ |    - (optional) N: number of hits you want (defaults to no limits --> full listing)
+ |    - (optional) O: offset to apply when paging
+-#}
+{%-if not tgt_col %}{% set tgt_col = "P01" %}{%endif-%}  # assume P01 as target of discovery
+{%-if not skosrel %}{% set skosrel = "narrower" %}{%endif-%}  # assume P01 as target of discovery
+{%-if not lang %}{% set lang = "en" %}{%endif-%}  # assume english if nothing explicitely specified
+PREFIX dc:   <http://purl.org/dc/terms/>
+PREFIX dct:  <http://purl.org/dc/terms/>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+
+SELECT 
+  ?tgtid ?tgtlbl 
+  {%- for c in cols %} (group_concat(?{{ c }}_note;separator=",") as ?{{ c }}_IDS){% endfor %}
+WHERE {
+  bind("{{ sdnid }}"^^xsd:string as ?id)    # declare the indentifier to look for
+  bind(<http://vocab.nerc.ac.uk/collection/{{ tgt_col }}/current/> as ?tgtcol) # and the collection to look into
+  bind(skos:{{ skosrel }} as ?skosrel)      # as well as the relation to match
+  {% for c in cols -%}
+  bind(<http://vocab.nerc.ac.uk/collection/{{ c }}/current/> as ?{{ c }}_col) # and the collection to look into
+  {% endfor -%}
+  
+  ?term dct:identifier ?id;          # select the matching identifier
+		skos:prefLabel ?lbl.             # and get their label
+  ?col skos:member ?term;            # find its collection
+    dc:title ?colt.                  # and get their title
+  
+  ?term ?skosrel ?tgtterm.           # now find related terms
+  ?tgtcol skos:member ?tgtterm .     # strictly within the target collection
+  ?tgtterm dct:identifier ?tgtid;    # their id
+    skos:prefLabel ?tgtlbl.          # their label
+    
+  FILTER(langMatches(lang(?lbl), "{{ lang }}"))
+  FILTER(langMatches(lang(?tgtlbl), "{{ lang }}"))                                                 
+
+  {% for c in cols %}
+  OPTIONAL {
+    ?{{ c }}_col skos:member ?{{ c }}_term .                                           
+    ?{{ c }}_term skos:narrower|skos:related ?tgtterm ;
+        skos:notation ?{{ c }}_note .
+  } {% endfor %}
+} 
+GROUP BY ?tgtid ?tgtlbl
+{{ "OFFSET " ~ O  if O else "" }} {#- add offset statement if provided #}
+{{ "LIMIT " ~ N   if N else "" }} {#- add limit  statement if provided #}

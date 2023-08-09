@@ -1,0 +1,36 @@
+{#- Jinja Template --> Sparql Query
+ | Search for the narrow down related concepts of a specified SDN identifier 
+ | variables in template:
+ |    - sdnid: the full formatted "SDN:«collection»::«code»" identifier to lookup
+ |    - (optional) lang: language of the labels to return (defaults to "en")
+ |    - (optional) N: number of hits you want (defaults to no limits --> full listing)
+ |    - (optional) O: offset to apply when paging
+-#}
+{%-if not lang %}{% set lang = "en" %}{%endif-%}  # assume english if nothing explicitely specified
+PREFIX dc:   <http://purl.org/dc/terms/>
+PREFIX dct:  <http://purl.org/dc/terms/>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?id ?lbl ?nid ?nlbl ?ncolt
+WHERE {
+  bind("{{ sdnid }}"^^xsd:string as ?id)    # declare the indentifier to look for
+  
+  ?term dct:identifier ?id;          # select the matching identifier
+		skos:prefLabel ?lbl.             # and get their label
+  ?col skos:member ?term;            # find its collection
+    dc:title ?colt.                  # and get their title
+  
+  ?nterm skos:narrower+ ?term.       # now further match associated terms in the graph being more specific «narrow»
+  ?nterm dct:identifier ?nid;        # their id
+    skos:prefLabel ?nlbl.            # their label
+  ?ncol skos:member ?nterm ;         # and the collection they belong to
+    dc:title ?ncolt                  # including their title
+    
+  FILTER(langMatches(lang(?lbl), "{{ lang }}"))
+  FILTER(langMatches(lang(?nlbl), "{{ lang }}"))                                                 
+} 
+{{ "OFFSET " ~ O  if O else "" }} {#- add offset statement if provided #}
+{{ "LIMIT " ~ N   if N else "" }} {#- add limit  statement if provided #}
