@@ -1,0 +1,32 @@
+{# Jinja Template --> Sparql Query
+ | Retrieve some useful details on the list of passed identifiers
+ | variables in template:
+ |    - uris: list of identifiers to bodc terms
+ |    - (optional) language: language of the labels to return (defaults to "en")
+#}
+
+{%-if not language %}{% set language = "en" %}{%endif-%}
+prefix skos: <http://www.w3.org/2004/02/skos/core#>
+prefix text: <http://jena.apache.org/text#>
+prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+prefix owl: <http://www.w3.org/2002/07/owl#>
+prefix dc: <http://purl.org/dc/terms/>
+
+SELECT DISTINCT 
+	(?term as ?ConceptIRI)
+	(?dci as ?Identifier)
+	(?pl as ?PreferedLabelTranslated)
+	(?depr as ?isDeprecated)
+WHERE {
+{%- for uri in uris %}
+	{
+    bind(<{{ uri }}> as ?term)    # declare the indentifier to look for
+		?term skos:prefLabel ?pl .
+		?term owl:deprecated ?depr .
+		FILTER(langMatches(lang(?pl), "{{language}}"))
+		?term dc:identifier ?dci .
+	}
+	{{'UNION' if not loop.last }}
+{%- endfor %}
+}
+ORDER BY (?dci)
